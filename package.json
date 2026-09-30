@@ -1,0 +1,34 @@
+{
+  "name": "zariya-storefront",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"npm:server:dev\" \"npm:client:dev\"",
+    "client:dev": "vite --host 0.0.0.0",
+    "server:dev": "cross-env NODE_ENV=development AUTO_ADMIN_LOGIN=true node --watch server/index.js",
+    "build": "vite build",
+    "build:preview": "cross-env VITE_CATALOG_PREVIEW=true vite build",
+    "start": "node server/start.js",
+    "seed": "node server/seed.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "connect-mongo": "^5.1.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "express-session": "^1.18.1",
+    "lucide-react": "^0.468.0",
+    "mongoose": "^8.9.5",
+    "multer": "^2.4.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "cross-env": "^10.1.0",
+    "vite": "^6.0.7"
+  }
+}
