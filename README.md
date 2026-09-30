@@ -15,6 +15,12 @@ Browsing the included sample catalog works without MongoDB. In local `npm run de
 
 Run `npm run build`, set `MONGODB_URI`, `SESSION_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and optionally `PORT`, then run `npm start`. Express serves both the production build and the API. For production, use HTTPS so the session cookie's `Secure` flag is enforced.
 
+The production server requires MongoDB and administrator credentials. On its first connection to an empty database it creates the administrator from `ADMIN_EMAIL`/`ADMIN_PASSWORD` and seeds the 15 sample collections and 30 products. Product-image uploads are stored in MongoDB GridFS when connected; local development without MongoDB stores them under `uploads/`.
+
+## Full Render deployment
+
+`render.yaml` describes the full Node.js storefront, API, customer/admin sessions, and image storage. In Render, create a Blueprint from this repository and enter the secrets in its environment form. Create a MongoDB Atlas database and database user, set the Atlas `MONGODB_URI` only in Render's private environment settings, and allow Render to reach Atlas using the network access rule you choose. Set a unique administrator email and password there as well. Never commit `.env` or paste connection strings into source files. Render's free web service can sleep while idle; its first request after sleeping may take longer. The GitHub Pages URL remains a separate, static catalog-only preview.
+
 ## Public catalog preview
 
 `.github/workflows/pages.yml` builds and deploys a GitHub Pages preview when changes are pushed to `sukeshnipantawane27-ux-zariya-ecommerce`. It reads the sample catalog bundled at build time and supports browsing, search, category filters, product details, and a local shopping bag. Checkout, customer accounts, admin tools, newsletter signup, database changes, and image uploads are intentionally unavailable. GitHub Pages must be enabled for the repository with **Settings → Pages → Build and deployment → GitHub Actions**. GitHub Free does not support Pages for private repositories; make the repository public only if you intend to expose its source, or upgrade the GitHub account plan. Use a cloud MongoDB URI and a Node.js host to enable the full live store; a local MongoDB connection cannot be reached by a public host.

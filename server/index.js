@@ -17,6 +17,12 @@ const port = Number(process.env.PORT) || 5000;
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const catalog = JSON.parse(await readFile(path.join(root, "shared", "catalog.json"), "utf8"));
 const isProduction = process.env.NODE_ENV === "production";
+if (isProduction && !process.env.MONGODB_URI) {
+  throw new Error("Set MONGODB_URI to a cloud MongoDB database before starting the production store.");
+}
+if (isProduction && (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD)) {
+  throw new Error("Set ADMIN_EMAIL and ADMIN_PASSWORD before starting the production store.");
+}
 if (isProduction &&
     (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32 ||
      process.env.SESSION_SECRET.startsWith("replace-with-"))) {
@@ -50,6 +56,7 @@ app.use("/api", (_request, response, next) => {
   next();
 });
 
+let storeReady = false;
 const databaseReady = () => mongoose.connection.readyState === 1;
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -81,6 +88,52 @@ function uploadedImageExtension(buffer) {
   if (buffer.length >= 12 && buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP") return "webp";
   return null;
 }
+
+async function storeProductImage(filename, contentType, buffer) {
+  const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: "productImages" });
+  await new Promise((resolve, reject) => {
+    const upload = bucket.openUploadStream(filename, { metadata: { contentType } });
+    upload.once("error", reject);
+    upload.once("finish", resolve);
+    upload.end(buffer);
+  });
+}
+
+async function seedDatabaseCatalogIfEmpty() {
+  const [categoryCount, productCount] = await Promise.all([
+    Category.countDocuments(),
+    Product.countDocuments()
+  ]);
+  if (categoryCount || productCount) return;
+
+  await Category.bulkWrite(catalog.categories.map(({ id, ...category }) => ({
+    updateOne: { filter: { _id: id }, update: { $set: category }, upsert: true }
+  })));
+  await Product.bulkWrite(catalog.products.map(({ id, stockQuantity = 12, ...product }) => ({
+    updateOne: {
+      filter: { _id: id },
+      update: {
+        $set: {
+          ...product,
+          productType: product.productType ?? "simple",
+          regularPrice: product.regularPrice ?? product.compareAt ?? product.price,
+          salePrice: product.salePrice ?? (product.compareAt && product.price < product.compareAt ? product.price : null),
+          gallery: product.gallery ?? [],
+          attributes: product.attributes ?? [],
+          variations: product.variations ?? [],
+          groupedProductIds: product.groupedProductIds ?? [],
+          stockStatus: product.stockStatus ?? (stockQuantity > 0 ? "instock" : "outofstock"),
+          manageStock: product.manageStock ?? true,
+          sku: product.sku ?? `ZR-${id.toUpperCase()}`
+        },
+        $setOnInsert: { stockQuantity, active: true }
+      },
+      upsert: true
+    }
+  })));
+  console.info(`Initialized MongoDB with ${catalog.categories.length} categories and ${catalog.products.length} products.`);
+}
+
 const publicProduct = (product) => ({
   id: product._id ?? product.id,
   categoryId: product.categoryId,
@@ -429,6 +482,16 @@ app.get("/api/health", (_request, response) => {
     status: "ok",
     database: databaseReady() ? "connected" : "disconnected"
   });
+});
+
+app.get("/api/health/ready", (_request, response) => {
+  if (!databaseReady() || !storeReady) {
+    return response.status(503).json({
+      status: "not-ready",
+      database: databaseReady() ? "initializing" : "disconnected"
+    });
+  }
+  response.json({ status: "ready", database: "connected" });
 });
 
 app.post("/api/auth/customer/register", authLimiter, requireDatabase, asyncRoute(async (request, response) => {
@@ -910,19 +973,39 @@ app.post("/api/admin/uploads/products", requireAdmin, (request, response, next) 
       const invalid = prepared.find(({ extension }) => !extension);
       if (invalid) return response.status(400).json({ error: `${invalid.file.originalname} is not a supported JPEG, PNG, or WebP image.` });
       const images = [];
-      const writtenPaths = [];
-      await mkdir(productUploadDirectory, { recursive: true });
-      try {
-        for (const { file, extension } of prepared) {
-          const filename = `${randomUUID()}.${extension}`;
-          const filePath = path.join(productUploadDirectory, filename);
-          await writeFile(filePath, file.buffer, { flag: "wx" });
-          writtenPaths.push(filePath);
-          images.push(`/uploads/products/${filename}`);
+      if (databaseReady()) {
+        const storedFiles = [];
+        try {
+          for (const { file, extension } of prepared) {
+            const filename = `${randomUUID()}.${extension}`;
+            const contentType = extension === "jpg" ? "image/jpeg" : `image/${extension}`;
+            await storeProductImage(filename, contentType, file.buffer);
+            storedFiles.push(filename);
+            images.push(`/uploads/products/${filename}`);
+          }
+        } catch (writeError) {
+          const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: "productImages" });
+          await Promise.allSettled(storedFiles.map(async (filename) => {
+            const [storedFile] = await bucket.find({ filename }).limit(1).toArray();
+            if (storedFile) await bucket.delete(storedFile._id);
+          }));
+          throw writeError;
         }
-      } catch (writeError) {
-        await Promise.allSettled(writtenPaths.map((filePath) => unlink(filePath)));
-        throw writeError;
+      } else {
+        await mkdir(productUploadDirectory, { recursive: true });
+        const writtenPaths = [];
+        try {
+          for (const { file, extension } of prepared) {
+            const filename = `${randomUUID()}.${extension}`;
+            const filePath = path.join(productUploadDirectory, filename);
+            await writeFile(filePath, file.buffer, { flag: "wx" });
+            writtenPaths.push(filePath);
+            images.push(`/uploads/products/${filename}`);
+          }
+        } catch (writeError) {
+          await Promise.allSettled(writtenPaths.map((filePath) => unlink(filePath)));
+          throw writeError;
+        }
       }
       response.status(201).json({ images });
     } catch (uploadError) {
@@ -1256,6 +1339,31 @@ app.delete("/api/categories/:id", requireAdmin, asyncRoute(async (request, respo
   response.json({ message: "Category deleted." });
 }));
 
+app.get("/uploads/products/:filename", asyncRoute(async (request, response, next) => {
+  const { filename } = request.params;
+  if (!uploadedImagePattern.test(`/uploads/products/${filename}`)) {
+    return response.status(404).json({ error: "Product image not found." });
+  }
+  if (!databaseReady()) {
+    return response.sendFile(path.join(productUploadDirectory, filename), (error) => {
+      if (error && !response.headersSent) {
+        if (error.code === "ENOENT") return response.status(404).json({ error: "Product image not found." });
+        next(error);
+      }
+    });
+  }
+
+  const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: "productImages" });
+  const [file] = await bucket.find({ filename }).limit(1).toArray();
+  if (!file) return response.status(404).json({ error: "Product image not found." });
+  const extension = path.extname(filename).slice(1);
+  response.set({
+    "Cache-Control": "public, max-age=31536000, immutable",
+    "Content-Type": extension === "jpg" ? "image/jpeg" : `image/${extension}`
+  });
+  bucket.openDownloadStream(file._id).on("error", next).pipe(response);
+}));
+
 app.use("/uploads", express.static(path.join(root, "uploads"), {
   fallthrough: false,
   immutable: true,
@@ -1301,8 +1409,13 @@ if (process.env.MONGODB_URI) {
     .then(async () => {
       console.info("Connected to MongoDB.");
       await createAdminFromEnvironment();
+      await seedDatabaseCatalogIfEmpty();
+      storeReady = true;
     })
-    .catch((error) => console.error("MongoDB connection or admin setup failed:", error.message));
+    .catch((error) => {
+      console.error("MongoDB connection or store setup failed:", error.message);
+      if (isProduction) process.exitCode = 1;
+    });
 } else {
   console.warn("MongoDB is not configured. Catalog browsing uses demo data; order checkout is disabled.");
 }
