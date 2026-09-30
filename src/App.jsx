@@ -476,7 +476,7 @@ function Storefront() {
           <div className="footer-links">
             <div><span className="footer-label">FIND YOUR THING</span><button onClick={() => navigateToCollection(null)}>Shop everything</button><button onClick={() => navigateToCollection("gifting")}>Gifts with feeling</button><button onClick={() => navigateToCollection("home-living")}>The home edit</button></div>
             <div><span className="footer-label">A LITTLE HELP</span><a href="mailto:hello@zariya.example">Say hello</a><span>Thoughtful delivery</span><span>Returns, made easy</span></div>
-            <div><span className="footer-label">THE ZARIYA STUDIO</span><a href="/admin">Admin sign in</a></div>
+            {!catalogPreview && <div><span className="footer-label">THE ZARIYA STUDIO</span><a href="/admin">Admin sign in</a></div>}
           </div>
         </div>
         <div className="footer-bottom"><span>© 2025 Zariya. Made with feeling.</span><span>Made to be found. Made to be kept.</span><span>India · INR ₹</span></div>
@@ -605,7 +605,11 @@ function addProductToBag(current, product) {
 }
 
 export default function App() {
-  const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+  const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+  const browserPath = window.location.pathname.startsWith(basePath)
+    ? window.location.pathname.slice(basePath.length)
+    : window.location.pathname;
+  const pathname = browserPath.replace(/\/+$/, "") || "/";
   if (catalogPreview && (pathname === "/account" || pathname === "/admin")) {
     return <main className="preview-unavailable"><a className="wordmark" href="/">zariya<span>.</span><small>THE ART OF EVERYDAY</small></a><span className="eyebrow"><span className="eyebrow-line" /> CATALOG PREVIEW</span><h1>Not part of this preview.</h1><p>Customer accounts and store management require the full connected service.</p><a className="button button-dark" href="/">Return to the collection <ArrowRight size={15} /></a></main>;
   }

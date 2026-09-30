@@ -17,7 +17,7 @@ Run `npm run build`, set `MONGODB_URI`, `SESSION_SECRET`, `ADMIN_EMAIL`, `ADMIN_
 
 ## Public catalog preview
 
-`render.yaml` configures a Render static-site preview using `npm ci && npm run build:preview`. This preview reads the sample catalog bundled at build time. It supports browsing, search, category filters, product details, and a local shopping bag; checkout, customer accounts, admin tools, newsletter signup, database changes, and image uploads are intentionally unavailable. To deploy, push this repository to GitHub, select **New + → Blueprint** in Render, connect the repository, and approve the `zariya-catalog-preview` static site. Render provides the public preview URL after the build succeeds. Use the full Node web service and a cloud MongoDB URI to enable the live store features; the local development database URI is not reachable from a public host.
+`.github/workflows/pages.yml` builds and deploys a GitHub Pages preview when changes are pushed to `sukeshnipantawane27-ux-zariya-ecommerce`. It reads the sample catalog bundled at build time and supports browsing, search, category filters, product details, and a local shopping bag. Checkout, customer accounts, admin tools, newsletter signup, database changes, and image uploads are intentionally unavailable. GitHub Pages must be enabled for the repository with **Settings → Pages → Build and deployment → GitHub Actions**. GitHub Free does not support Pages for private repositories; make the repository public only if you intend to expose its source, or upgrade the GitHub account plan. Use a cloud MongoDB URI and a Node.js host to enable the full live store; a local MongoDB connection cannot be reached by a public host.
 
 ## REST API
 
