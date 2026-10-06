@@ -57,7 +57,7 @@ app.use("/api", (_request, response, next) => {
 });
 
 let storeReady = false;
-const databaseReady = () => mongoose.connection.readyState === 1;
+const databaseReady = () => mongoose.connection.readyState === 1 && storeReady;
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
