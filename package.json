@@ -9,6 +9,7 @@
     "server:dev": "cross-env NODE_ENV=development AUTO_ADMIN_LOGIN=true node --watch server/index.js",
     "build": "vite build",
     "build:preview": "cross-env VITE_CATALOG_PREVIEW=true vite build",
+    "build:github-pages": "cross-env VITE_CATALOG_PREVIEW=true VITE_BASE_PATH=/INTERNSHIP/ vite build",
     "start": "node server/start.js",
     "seed": "node server/seed.js"
   },
